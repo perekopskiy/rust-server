@@ -1,6 +1,7 @@
 mod db_operations;
 mod public_api;
 mod private_api; 
+mod tests;
 
 use sqlx::postgres::PgPool;
 use actix_web::{web, App, HttpServer};
