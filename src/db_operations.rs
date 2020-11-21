@@ -1,11 +1,22 @@
 use sqlx::postgres::PgPool;
 use std::env;
+use serde::{Deserialize, Serialize};
 
 pub type PgConn = sqlx::pool::PoolConnection<sqlx::Postgres>;
 
 pub struct Record {
     pub id: i32,
     pub task: Vec<u8>
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Request {
+    pub task: Vec<u8>
+}
+
+pub enum CalculationResult {
+    Success(Vec<u8>),
+    Failure(String),
 }
 
 
@@ -50,6 +61,21 @@ pub async fn set_status(conn: &mut PgConn, id: i32, status: &str) -> anyhow::Res
     Ok(())
 }
 
+pub async fn get_status(conn: &mut PgConn, id: i32) -> anyhow::Result<String> {
+    let rec = sqlx::query!(
+        r#"
+    SELECT status
+    FROM requests
+    WHERE id = $1;
+        "#,
+        id
+    )
+    .fetch_one(conn)
+    .await?;
+
+    Ok(rec.status)
+}
+
 pub async fn get_pending_rec(conn: &mut PgConn) -> anyhow::Result<Record> {
     let rec = sqlx::query!(
         r#"
@@ -67,20 +93,7 @@ LIMIT 1
 }
 
 
-pub async fn get_status(conn: &mut PgConn, id: i32) -> anyhow::Result<String> {
-    let rec = sqlx::query!(
-        r#"
-    SELECT status
-    FROM requests
-    WHERE id = $1;
-        "#,
-        id
-    )
-    .fetch_one(conn)
-    .await?;
 
-    Ok(rec.status)
-}
 
 pub async fn get_result(conn: &mut PgConn, id: i32) -> anyhow::Result<Vec<u8>> {
     let rec = sqlx::query!(
