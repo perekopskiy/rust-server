@@ -14,11 +14,11 @@ pub struct Request {
     pub task: Vec<u8>
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub enum CalculationResult {
     Success(Vec<u8>),
     Failure(String),
 }
-
 
 pub async fn create_connection() -> anyhow::Result<PgPool> {
     let pool = PgPool::connect(&env::var("DATABASE_URL")?).await?;
@@ -92,75 +92,69 @@ LIMIT 1
     Ok(Record{id : rec.id, task: rec.task})
 }
 
+pub async fn get_calculation_result(conn: &mut PgConn, id: i32) -> anyhow::Result<CalculationResult> {
+    let status = get_status(conn, id).await?;
+    if status != "completed" && status != "failed" {
+        return Err(anyhow::anyhow!("no result for such id"));
+    }
+    else {
+        let rec = sqlx::query!(
+            r#"
+        SELECT result, error
+        FROM requests
+        WHERE id = $1;
+            "#,
+            id
+        )
+        .fetch_one(conn)
+        .await?;
 
-
-
-pub async fn get_result(conn: &mut PgConn, id: i32) -> anyhow::Result<Vec<u8>> {
-    let rec = sqlx::query!(
-        r#"
-    SELECT result
-    FROM requests
-    WHERE id = $1;
-        "#,
-        id
-    )
-    .fetch_one(conn)
-    .await?;
-
-    match rec.result {
-        Some(result) => Ok(result),
-        None => Err(anyhow::anyhow!("no result for such id"))
-    }   
-}
-
-pub async fn get_error(conn: &mut PgConn, id: i32) -> anyhow::Result<String> {
-    let rec = sqlx::query!(
-        r#"
-    SELECT error
-    FROM requests
-    WHERE id = $1;
-        "#,
-        id
-    )
-    .fetch_one(conn)
-    .await?;
-
-    match rec.error {
-        Some(error) => Ok(error),
-        None => Err(anyhow::anyhow!("no result for such id"))
+        if status == "completed" {
+            match rec.result {
+                Some(result) => Ok(CalculationResult::Success(result)),
+                None => Err(anyhow::anyhow!("no result for such id"))
+            }  
+        }
+        else {
+            match rec.error {
+                Some(error) => Ok(CalculationResult::Failure(error)),
+                None => Err(anyhow::anyhow!("no error for such id"))
+            }   
+        }   
     }
 }
 
-pub async fn set_result(conn: &mut PgConn, id: i32, result: &Vec<u8>) -> anyhow::Result<()> {
-    sqlx::query!(
-        r#"
-    UPDATE requests
-    SET result = $1
-    WHERE id = $2
-    RETURNING id;
-        "#,
-        result,
-        id
-    )
-    .fetch_one(conn)
-    .await?;
-
-    Ok(())
-}
-
-pub async fn set_error(conn: &mut PgConn, id: i32, error: &str) -> anyhow::Result<()> {
-    sqlx::query!(
-        r#"
-    UPDATE requests
-    SET error = $1
-    WHERE id = $2
-    RETURNING id;
-        "#,
-        error,
-        id
-    )
-    .fetch_one(conn)
-    .await?;
+pub async fn set_calculation_result(conn: &mut PgConn, id: i32, result: &CalculationResult) -> anyhow::Result<()> {
+    match result {
+        CalculationResult::Success(result) => {
+            sqlx::query!(
+                r#"
+            UPDATE requests
+            SET result = $1
+            WHERE id = $2
+            RETURNING id;
+                "#,
+                result,
+                id
+            )
+            .fetch_one(conn)
+            .await?;
+        },
+        CalculationResult::Failure(error) => {
+            sqlx::query!(
+                r#"
+            UPDATE requests
+            SET error = $1
+            WHERE id = $2
+            RETURNING id;
+                "#,
+                error,
+                id
+            )
+            .fetch_one(conn)
+            .await?;
+        }
+    };
 
     Ok(())
 }

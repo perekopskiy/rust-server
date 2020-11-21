@@ -23,22 +23,15 @@ pub async fn request_status(data: web::Data<MyPgPool>, item: web::Json<i32>) -> 
             let status = db_operations::get_status(&mut conn, item.0).await;
             match status {
                 Ok(status) => {
-                    if status == "completed" {
-                        let result = db_operations::get_result(&mut conn, item.0).await;
+                    if status != "completed" && status != "failed" {
+                        return HttpResponse::Ok().json(status);
+                    }
+                    else {
+                        let result = db_operations::get_calculation_result(&mut conn, item.0).await;
                         return match result {
                             Ok(result) => HttpResponse::Ok().json(result),
                             Err(_) => HttpResponse::BadRequest().finish()
                         };
-                    }
-                    else if status == "failed" {
-                        let error = db_operations::get_error(&mut conn, item.0).await;
-                        return match error {
-                            Ok(error) => HttpResponse::Ok().json(error),
-                            Err(_) => HttpResponse::BadRequest().finish()
-                        };
-                    }
-                    else {
-                        return HttpResponse::Ok().json(status);
                     }
                 },
                 Err(_) => HttpResponse::BadRequest().finish()
